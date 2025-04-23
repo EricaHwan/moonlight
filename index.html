@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>雨夜之月</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            width: 100vw;
+            font-family: 'Arial', sans-serif;
+        }
+        .moon-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+        }
+        .moon {
+            position: absolute;
+            width: 400px;
+            height: 400px;
+            background: #fff;
+            border-radius: 50%;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 50px rgba(255, 255, 255, 0.5);
+            transition: all 0.5s ease;
+            z-index: 1;
+        }
+        .rain {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 3;
+        }
+        .rain-drop {
+            position: absolute;
+            width: 2px;
+            background: rgba(255, 255, 255, 0.5);
+            animation: rain-fall linear infinite;
+            transition: opacity 0.5s ease;
+        }
+        @keyframes rain-fall {
+            0% {
+                transform: translateY(-100%);
+            }
+            100% {
+                transform: translateY(100vh);
+            }
+        }
+        .waves {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 2;
+            overflow: hidden;
+        }
+        .wave {
+            position: absolute;
+            width: 200%;
+            height: 100%;
+            background: transparent;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            animation: wave-move linear infinite;
+            transform-origin: center;
+        }
+        @keyframes wave-move {
+            0% {
+                transform: translateX(-100%) scaleY(0.5);
+                opacity: 0;
+            }
+            50% {
+                opacity: 0.5;
+            }
+            100% {
+                transform: translateX(0%) scaleY(0.5);
+                opacity: 0;
+            }
+        }
+        .connect-button {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 10px 20px;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: 1px solid white;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            z-index: 5;
+        }
+        .debug-info {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            color: white;
+            font-size: 14px;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 5;
+        }
+    </style>
+</head>
+<body>
+    <div class="moon-container">
+        <div class="moon" id="moon"></div>
+        <div class="waves" id="waves"></div>
+        <div class="rain" id="rain"></div>
+    </div>
+    <button class="connect-button" id="connectBtn">連接 Arduino</button>
+    <div class="debug-info" id="debugInfo">等待連接...</div>
+
+    <script>
+        let moon = document.getElementById('moon');
+        let waves = document.getElementById('waves');
+        let rain = document.getElementById('rain');
+        let connectBtn = document.getElementById('connectBtn');
+        let debugInfo = document.getElementById('debugInfo');
+        let port;
+        let value = 0;
+
+        // 建立波浪
+        function createWaves() {
+            for (let i = 0; i < 3; i++) {
+                let wave = document.createElement('div');
+                wave.className = 'wave';
+                wave.style.top = (i * 33) + '%';
+                wave.style.animationDuration = (i + 2) + 's';
+                wave.style.animationDelay = (i * 0.5) + 's';
+                waves.appendChild(wave);
+            }
+        }
+
+        // 建立雨滴
+        function createRain() {
+            for (let i = 0; i < 200; i++) {
+                let drop = document.createElement('div');
+                drop.className = 'rain-drop';
+                drop.style.left = Math.random() * 100 + '%';
+                drop.style.height = Math.random() * 20 + 10 + 'px';
+                drop.style.animationDuration = Math.random() * 1 + 0.5 + 's';
+                drop.style.animationDelay = Math.random() * 2 + 's';
+                rain.appendChild(drop);
+            }
+        }
+
+        // 更新除錯訊息
+        function updateDebugInfo(message) {
+            debugInfo.textContent = message;
+            console.log(message);
+        }
+
+        // 連接 Arduino
+        async function connectArduino() {
+            try {
+                const filters = [
+                    { usbVendorId: 0x2341, usbProductId: 0x0043 },
+                    { usbVendorId: 0x2341, usbProductId: 0x0001 }
+                ];
+                
+                updateDebugInfo('正在請求連接序列埠...');
+                port = await navigator.serial.requestPort({ filters });
+                
+                updateDebugInfo('正在開啟序列埠...');
+                await port.open({ baudRate: 9600 });
+                
+                updateDebugInfo('已連接 Arduino');
+                connectBtn.textContent = '已連接';
+                connectBtn.style.background = 'rgba(0, 255, 0, 0.2)';
+                
+                readArduino();
+            } catch (err) {
+                updateDebugInfo('連接錯誤: ' + err.message);
+                connectBtn.textContent = '連接失敗，請重試';
+                connectBtn.style.background = 'rgba(255, 0, 0, 0.2)';
+            }
+        }
+
+        // 讀取 Arduino 數據
+        async function readArduino() {
+            const reader = port.readable.getReader();
+            let buffer = '';
+            
+            try {
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    
+                    const text = new TextDecoder().decode(value);
+                    buffer += text;
+                    
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || '';
+                    
+                    for (const line of lines) {
+                        const trimmedLine = line.trim();
+                        if (trimmedLine) {
+                            const num = parseInt(trimmedLine);
+                            if (!isNaN(num)) {
+                                updateDebugInfo('收到數值: ' + num);
+                                updateVisuals(num);
+                            }
+                        }
+                    }
+                }
+            } catch (err) {
+                updateDebugInfo('讀取錯誤: ' + err.message);
+                connectBtn.textContent = '讀取錯誤，請重試';
+                connectBtn.style.background = 'rgba(255, 0, 0, 0.2)';
+            } finally {
+                reader.releaseLock();
+            }
+        }
+
+        // 更新視覺效果
+        function updateVisuals(val) {
+            // 將 Arduino 讀值 (0-1023) 映射到不同的效果
+            const intensity = val / 1023; // 強度值
+            
+            // 更新雨滴
+            const rainDrops = document.querySelectorAll('.rain-drop');
+            rainDrops.forEach(drop => {
+                drop.style.opacity = Math.max(0, 1 - intensity * 1.2); // 確保在最大值時完全消失
+            });
+            
+            // 更新波浪
+            const waveElements = document.querySelectorAll('.wave');
+            waveElements.forEach(wave => {
+                wave.style.opacity = intensity * 0.5;
+                wave.style.animationPlayState = 'running';
+                wave.style.animationDuration = (3 - intensity * 2) + 's';
+            });
+            
+            // 更新月亮
+            const moonBrightness = 0.5 + (intensity * 0.5);
+            moon.style.opacity = moonBrightness;
+            moon.style.boxShadow = `0 0 ${30 + (intensity * 20)}px rgba(255, 255, 255, ${0.5 + (intensity * 0.5)})`;
+        }
+
+        // 初始化
+        createWaves();
+        createRain();
+        connectBtn.addEventListener('click', connectArduino);
+    </script>
+</body>
+</html> 
